@@ -5,6 +5,23 @@ import xml.etree.ElementTree as ET
 import json
 import yaml
 
+def version_parts(version):
+    """Convert an OS version into a tuple of numbers."""
+    return tuple(int(part) for part in str(version).split("."))
+
+def is_outdated(found, required):
+    """Return True if an OS version is older than required."""
+    found_parts = version_parts(found)
+    required_parts = version_parts(required)
+
+    length = max(len(found_parts), len(required_parts))
+
+    found_parts += (0,) * (length - len(found_parts))
+    required_parts += (0,) * (length - len(required_parts))
+
+    return found_parts < required_parts
+
+
 tree = ET.parse("PA2_sample1.xml")
 root = tree.getroot()
 site = root.get("site")
@@ -19,7 +36,7 @@ total_devices = 0
 roles = {}
 interfaces = {"up": 0, "down": 0, "other": 0}
 violations = []
-
+compliant = []
 
 for device in root.findall("device"):
     device_id = device.get("id")
@@ -29,6 +46,7 @@ for device in root.findall("device"):
         continue
 
     total_devices += 1
+    violations_before = len(violations)
     role = device.get("role")
 
     if role in roles:
@@ -44,6 +62,19 @@ for device in root.findall("device"):
             "type": "unknown_role",
             "role": role
         })
+
+    if role in min_os:
+        found = device.get("os", "")
+        required = str(min_os[role])
+
+        if is_outdated(found, required):
+            violations.append({
+                "id": device_id,
+                "type": "os_outdated",
+                "found": found,
+                "required": required
+            })
+
 
     if policy.get("require_owner", False):
         owner = device.findtext("owner")
@@ -76,6 +107,9 @@ for device in root.findall("device"):
                 "down": device_down
             })
 
+    if len(violations) == violations_before:
+        compliant.append(device_id)
+
 
     print(device_id)
 
@@ -91,7 +125,7 @@ report = {
     "roles": roles,
     "interfaces": interfaces,
     "violations": violations,
-    "compliant": []
+    "compliant": sorted(compliant)
 }
 
 with open("audit.json", "w") as file:
